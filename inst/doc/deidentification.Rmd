@@ -1,0 +1,193 @@
+---
+title: "Anonymization of Spatial Point Patterns and Raster Objects."
+author: "Malone, B."
+date: "`r Sys.Date()`"
+output: rmarkdown::html_vignette
+vignette: >
+  %\VignetteIndexEntry{Anonymization}
+  %\VignetteEngine{knitr::rmarkdown}
+  %\VignetteEncoding{UTF-8}
+---
+
+## Introduction
+This demo provides some context and use cases of the three functions that make up the `tangles` R package. You might ask, what does this package do? and why do we need such functionality? 
+
+The main driver behind this package is confidentiality. Confidentiality in an open (-sharing) world are seemingly contradictory terms. How can you have both? Science these days is becoming more and more open. People conduct research, design experiments, write manuscripts and and analyse results. Nowadays, the whole process of scientific research is moving from behind closed doors, to a completely open system for all to scrutinize, but more importantly to contribute. Idealistically, all research is to be reproducible, and one can no longer hide behind domain centered terminology, or undecipherable mathematical equations to get something published and attain peer recognition. If you don't share, and you don't open your research work to be openly scrutinized, the academic path will increasingly become more difficult. We are in the age of collaboration. 
+
+But we still need confidentiality. In particular, we need spatial anonymization. We might want to share the greatest spatial modelling approach ever known, but we do not necessarily want to show exactly where that work was conducted. The results could be significant and this could be to the advancement or detriment of the place where the research was conducted. So we need confidentiality, but we do want to ensure that one has the best methods and approaches available to them to conduct research. This is where the `tangles` packages comes in.
+
+`tangles` anonymizes spatial data. By anonymization, i mean the spatial coordinates pertaining to a set of data -- which tag it to some specific location on the earth's surface, are altered in such a way, so that the original location can never be known (unless the exact key is found to disentangle the transformed data back to their original form). The model is based on a owner and user concept. The owner has the tools to do the spatial anonymization, then shares the anonymized data with the user. The user conducts whichever spatial analysis is to be done on the data, then shares the results back with the owner, who then re-identifies the data. The user never needs to know the real spatial locations. However it is important that any process in the anonymization does not alter the spatial properties of the original data, such as auto-correlation, co-variance and separation distances. `tangles` achieves this. Specifically, `tangles` has 3 modes of anonymization:
+
+* Vertical shifts
+* Horizontal shifts
+* Rotational shifts
+
+
+`tangles` achieves anonymization by randomization of the shift mode and values associated with the shift mode. For both vertical and horizontal shifts, a random integer between a very small number and a very large number is chosen. For rotational shifts, the rotation degree, and pivot point are chosen at random. The user indicates how many anonymization steps to go with (this is called abstraction depth and by default is set to 3), and then `tangles` goes about its work. Other than specifying the depth of entanglement, the owner never needs to know the modes or values that went into do it. The user is none the wiser, as the spatial properties will remain as for the the original data, but may be a little perplexed that the coordinates don't map to any particular place on earth. Original data may be given in Lat and Longs or Eastings and Northings, and be encoded to a given coordinate reference system, but `tangles` is completely agnostic of this. It just does the anonymization, and as long as we retain those entangling steps, the user can always get back to the original spatial coordinates. 
+
+The above point leads to the next point about `tangles` which is to do with the unique tagging of an anonymization. The anonymization is appended with a hash key, which embodies the entanglement process, but more importantly, ensures explicit tracking and linking of data. The hash key system ensures that the exact entanglement and dentanglement steps are carried out as intended. There is no second guessing or approximation. If hashes between data and entanglement do not match, `tangles` will not go to work!
+
+We should probably now dig into some examples before things get too esoteric. `tangles` has 3 functions:
+
+* `tangles` - Anonymizes spatial point patterns and raster objects
+* `tangler` - For a given entanglement process (which is aptly called a detangler object), spatial point patterns and raster objects are anonymized accordingly.
+* `detangles` - For a given detangler object, spatial point patterns and raster objects are reverted back to their original coordinates.
+
+Lets take a look at how we might use these functions with a contrived example using some available data. 
+
+## Setup
+
+See the help files associated which each of the data sets loaded below. 
+
+```{r libraries, echo=T, eval= T, message=FALSE, warning= FALSE}
+# R libraries
+library(tangles);library(digest);library(raster);library(sp)
+
+# DATA SETS
+# POINT PATTERN
+data("HV_subsoilpH")
+
+# RASTER OBJECT
+data("hunterCovariates_sub")
+```
+
+
+## Shifting modes
+At the heart of `tangles` are the shifting modes that each on their own provides a mechanism for changing the original spatial coordinates. Used collectively they tangle up the original data so as to be anonymized. 
+
+### Vertical and horizontal shifts
+
+If we consider `xyData` to be a spatial point pattern, we can simply draw a random number from a very large range of possibilities and then add this to either the horizontal or vertical coordinate depending on which shift mode is implemented.
+
+```{r vshifts, echo=T, eval= F, message=FALSE, warning= FALSE}
+## Horizontal shift
+  leap_X<- function(xyData=NULL){
+    r.num<- sample(-999999:999999, 1)
+    xyData[,1]<- xyData[,1] + r.num
+    return(list(xyData, r.num))
+  }
+  
+  
+## Vertical shift
+  leap_Y<- function(xyData=NULL){
+    r.num<- sample(-999999:999999, 1)
+    xyData[,2]<- xyData[,2] + r.num
+    return(list(xyData, r.num))
+  }
+```
+
+### Rotational shift
+
+Using the `xyData` example again, rotational shifting is slightly more involved. First we pick an existing point from the spatial point pattern at random. This is to be used as a pivot point from which all points are rotated. Then we select an angle at random, which will specify the amount of rotation to do.
+
+```{r rshifts, echo=T, eval= F, message=FALSE, warning= FALSE}
+## Step 3 (data rotation)
+  rotate_XY<- function(xyData=NULL){
+    
+    # pick a point at random from the dataset
+    row.sample<- sample(1:nrow(xyData),1)
+    origin.point<- xyData[row.sample,]
+    
+    ## Prep data for rotation
+    x<- t(xyData[,1])
+    y<- t(xyData[,2])
+    v = rbind(x,y)
+    
+    x_center = origin.point[1]
+    y_center = origin.point[2]
+    
+    #create a matrix which will be used later in caclculations
+    center <-  v
+    center[1,]<- as.matrix(x_center)
+    center[2,]<- as.matrix(y_center)
+    
+    if (rasterdata == TRUE){
+      deg<- sample(c(90,180,270),1, replace = F)} else { # choose a random orientation
+        deg<- sample(1:359,1, replace = F)} # choose a random orientation
+    
+    theta = (deg * pi)/180      # express in radians
+    
+    # rotation matrix
+    R = matrix(c(cos(theta), -sin(theta), sin(theta), cos(theta)), nrow=2)
+    
+    # do the rotation...
+    s = v - center    # shift points in the plane so that the center of rotation is at the origin
+    so = R%*%s           # apply the rotation about the origin
+    vo = so + center   # shift again so the origin goes back to the desired center of rotation
+    
+    # pick out the vectors of rotated x- and y-data
+    xyData<- cbind(vo[1,], vo[2,])
+    return(list(xyData,origin.point,deg))
+  }
+  
+```
+
+Note that for point pattern data we could choose at random any degree value to rotate the data by. The same goes for raster data too, but you will run into issues of trying to rasterise the entangled data because the raster is based on straight vertical and horizontal grid cells, and any rotation outside of right angles will throw any error that says something along the lines of 'this data is not and can not be a raster'. Therefore if you want to continue using raster data you will be constrained to use rotations of 90, 180, and 270 degrees. 
+
+From each of the shift modes, we want to keep the values that were randomly selected if we have any hope of disentangling the data, or entangling further data using the same steps. Therefore it is imperative we retain the shift distance from the vertical and horizontal shifting and the coordinates of the pivot point and degree value for the rotational shifting. Note that when we run `tangles` we specify the abstraction depth, and the function just chooses at random which mode shifts to perform. Ultimately we just want saved the sequence of mode shifts that were used, and the associated values of the shifts. 
+
+## The `tangles` function
+
+The `tangles` function has four inputs. First the is `data` which is where we specify the data that we wish to entangle. Currently it can take 2-column matrix of coordinates and raster objects, including stacks. `depth` is the number of steps of entanglement we want to use, where the default is 3. `rasterdata` is a logical parameter to inform the function that for rotational shifts, the rotations will use only right-angle degrees. We would generally use this option for when we have raster data, but we can also use it when we have non-gridded point patterns. `raster_object` is also a logical and just informs the function that the data that needs to be entangled is a raster format as these data are treated slightly differently compared to non-gridded point patterns. `saveTangles` lets you save the function outputs. The default is `FALSE` but when set to `TRUE` the function outputs will save to a specified directory or just the working directory. You will need to indicate this in the `path` parameter. It is highly recommended that outputs are saved to file
+
+```{r tangles, echo=T, eval= T, message=FALSE, warning= FALSE}
+xyData<- as.matrix(HV_subsoilpH[,1:2])
+tangles.out<- tangles(data = xyData, depth = 3, rasterdata = FALSE, raster_object = FALSE, saveTangles = TRUE, path = tempdir())
+str(tangles.out)  
+```
+
+The outputs of `tangles` contains a list with two elements. The first element is a data frame holding the entangled coordinates. The second element is arguably the most important as it contains the information to be used for disentangling the data. Ultimately this is the information that the data owner will not share with the data user. In this information is a unique hash key  (derived using the [SHA-256 algorithm](https://en.wikipedia.org/wiki/SHA-2)) built upon the shift parameters that are used to entangle the data. This hash key can also be used as an identifier, and will be particularly useful and a safeguard if the data owner is entangling a multitude of data sets. If specified, the function also exports to the working directory both the entangled coordinates (or raster object) and detangling object. The file names contain either 'tangledXY' (coordinates) or 'detangler' (detangling object) followed by the unique hash key for identification purposes.
+
+## The `tangler` function
+
+`tangler` is to be used when we have already tangled a given dataset and wish to entangle an additional dataset with the same detangling object. For example we may have a non-gridded point pattern corresponding to observational data , together with associated raster data. So we may wish to firstly entangle to observation data then use the detangling object to entangle the raster data. Doing so conserves the spatial relationships as if they were in the original format. This is what we do below in the following example. `tangler` has 4 parameters. First there is `data`, the data we wish to entangle. Then there is `tanglerInfo` which is the detangling object, which is an output of the `tangles` function. `raster_object` is a logical to specify whether the data to be entangled is a raster object or not. `stub` allows the data owner to enter in a character string in the naming of the file that is exported (if specified in the `saveTangles` parameter) containing the entangled data whether it be just coordinates or a raster object. The file that is exported to the specified directory (as given in `path`) is of the `.rds` format and will also contain the unique hash key in the filename.
+
+```{r tangler, echo=T, eval= T, message=FALSE, warning= FALSE}
+# First entangle the point pattern
+xyData<- as.matrix(HV_subsoilpH[,1:2])
+tangles.out<- tangles(data = xyData, depth = 5, rasterdata = TRUE, raster_object = FALSE, saveTangles = TRUE, path = tempdir())
+
+# Now entangle the raster object
+tangler.out<- tangler(data = hunterCovariates_sub, tanglerInfo = tangles.out[[2]], raster_object = TRUE, stub = "myname", saveTangles = TRUE, path = tempdir())
+```
+
+
+Plotting both the original point pattern and grid together with their entangled versions shows that while we have changed the spatial coordinates and their orientation, the underlying spatial pattern remains unchanged.
+
+```{r t_plot, echo=T, eval= T, message=FALSE, warning= FALSE,fig.width=7, fig.height=5}
+# Plotting
+# original data
+pHV_subsoilpH<- HV_subsoilpH
+coordinates(pHV_subsoilpH)<- ~ X + Y
+plot(hunterCovariates_sub[[1]], main="orginal data"); plot(pHV_subsoilpH, add=T)
+
+# tangled data
+tPP<- as.data.frame(tangles.out[[1]])
+coordinates(tPP)<- ~ X + Y
+plot(tangler.out[[1]], main="tangled data");plot(tPP, add=T)
+```
+
+## The `detangles` function
+
+`detangles` gets your entangled data back to its original configuration. The function inputs in `detangles` are much the same as for `tangler`. The only exception is the `hash_key` parameter which ensures that there is a check for consistency in terms of the detangler object and the hash key the data owner has specified to do the disentangling. The use case of this is where the data user has performed their required spatial analysis and sends the data back to the data owner together with the unique hash key that was derived from the data entangling process. The output of `detangles` is the original data (whether it be non-gridded point pattern or raster object) in its correct spatial coordinates. These outputs are saved as an `.rds` in the working directory too.
+
+```{r detangles, echo=T, eval= F, message=FALSE, warning= FALSE}
+# points 
+xyData<- as.matrix(tangles.out[[1]])
+point_detang<- detangles(data=xyData, tanglerInfo=tangles.out[[2]], raster_object = FALSE, stub = "hv_fix", hash_key = "UNIQUE_HASH_KEY_HERE", saveTangles = TRUE, path = tempdir())
+
+#rasters
+raster_detang<- detangles(data=tangled.origi, tanglerInfo=tangles.out[[2]], raster_object = TRUE, stub = "hv_fix", hash_key = "UNIQUE_HASH_KEY_HERE", saveTangles = TRUE, path = tempdir())
+```
+
+
+## Final comments
+
+The above described functions have been tested predominantly on relatively small data sets. There would not be too many barriers to implementing on very large rasters, but at the moment there is not inbuilt functionality to tile or chunk raster objects. The normal use case for these functions would be on small data sets in most situations as it would be easier to mask the real locations of the data as opposed to very large areas whose spatial extents could be more easily recognizable. Similarly, entangling data in areas of recognizable coastlines, or prominent geographical landmarks may still be identifiable by knowledgeable people and as such the functions described here will not prove to be that useful. 
+
+Previous use cases have generally found that entangling data in non-gridded format results in the best entanglement, meaning the resulting spatial configuration will be more difficult to identify becasue the rotational shifting will not be constrained to right-angle transforms. Raster data can be rotated any which way one likes, but once the rotation gets away from right-angle representations of the original data, issues of rasterisation will happen. In general it might make sense for the data owner to entangled the spatial coordinates that have been intersected with raster data, and then share with the data user the tangled point pattern with appended raster data so that a given spatial analysis can proceed. How to interpolate or extrapolate the modeled predictions to the original coordinate settings will be a matter to solved between the data owner and user.  
+
+
+
+
+

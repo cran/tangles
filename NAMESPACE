@@ -1,0 +1,8 @@
+importFrom("raster", ncell, getValues, xyFromCell, stack, rasterFromXYZ)
+importFrom("digest", digest)
+importFrom("stats", complete.cases)
+importFrom("sp", coordinates)
+
+export(tangles)
+export(tangler)
+export(detangles)

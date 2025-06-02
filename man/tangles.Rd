@@ -1,68 +1,88 @@
 \name{tangles}
 \docType{methods}
 \alias{tangles}
-\title{Anonymize spatial point patterns and raster objects}
-\description{Spatial coordinates are anonymized by using three possible techniques of altering locations without loss of the spatial relationships between data. The three techniques are vertical, horizontal and rotational shifts. User defines how many steps to use in the anonymization. The actual steps taken are randomized and saved for later use.}
-
-\usage{tangles(data=NULL, depth=3, rasterdata = FALSE, raster_object = FALSE, 
-saveTangles = FALSE, path = NULL)}
-
-\arguments{
-  \item{data}{Can be either a 2 column \code{matrix} of spatial coordinates or a \code{raster} object.} 
-  \item{depth}{numeric; the number of anonymization steps to take (levels of abstraction). Default is 3.}     
-  \item{rasterdata}{logical; If \code{TRUE} the rotational degrees will be taken as either 90, 180 or 270 degrees rather than randomly selected. This is to preserve the properties of a raster if raster data is to be anonymized.}
-  \item{raster_object}{logical; If \code{TRUE} the data to be anonymized is a raster object. This means the data associated with the raster are carried through to the outputs.}
-  \item{saveTangles}{logical; Save function output to file. Default is \code{FALSE}, but it is recommended to always save outputs.}
-  \item{path}{character; Path to where outputs are saved.}
+\title{Anonymise spatial point patterns and raster objects}
+\description{
+Performs spatial anonymisation ("tangling") of coordinates through randomized transformation sequences, preserving relative spatial relationships while obscuring true locations. Three transformation types are used: X shift, Y shift, and rotation around a random origin. The sequence and parameters used for anonymisation are recorded and returned for later disentanglement.
 }
 
-\value{A \code{list} object that contains: 1. The transformed coordinates or transformed raster object (dependent on the inputs). 2. A separate list object to be used for untangling the transformed coordinates. The outputs can be written to file to a specified directory with file stub names of \code{tangledXY} and \code{detangler} respectively.These files have a common hash key as part of their file name.The hash key is generated from the detangler object using the sha256 hash algorithm}
+\usage{
+tangles(data = NULL, depth = 3, rasterdata = FALSE, raster_object = FALSE, 
+saveTangles = FALSE, exportShapefile = FALSE, path = NULL)
+}
 
+\arguments{
+  \item{data}{Either a two-column \code{matrix} or \code{data.frame} of coordinates, an \code{sf} POINT object, or a \code{terra::SpatRaster} object.}
+  
+  \item{depth}{Integer. Number of transformation steps to apply (default is 3).}
+  
+  \item{rasterdata}{Logical. If \code{TRUE}, rotations are limited to 90, 180, or 270 degrees to preserve axis alignment in raster data.}
+  
+  \item{raster_object}{Logical. Set \code{TRUE} if input is a \code{terra::SpatRaster} object. All raster values will be mapped to their transformed coordinates.}
+  
+  \item{saveTangles}{Logical. If \code{TRUE}, writes both the transformed data and detangler metadata to the specified \code{path}.}
+  
+  \item{exportShapefile}{Logical. If \code{TRUE} and input is a point-based dataset (not a raster), the anonymised coordinates are written to a shapefile. No CRS is assigned.}
+  
+  \item{path}{Character. Path to directory where outputs will be saved. Defaults \code{tempdir()}.}
+}
 
-\note{Raster data can in practice be rotated for any given angle, yet the linear horizontal and vertical properties of the raster will be lost, meaning that no software will be able to recognize it as a raster. This why there is the \code{rasterdata} parameter exists, and can be used for both raster and non-raster data. It just constrains the possible degree values that can be used in the anonymization. If raster data is being anonymized both \code{rasterdata} and \code{raster_object} will be set to \code{TRUE} in most cases.
+\value{
+A \code{list} with two elements:
+\itemize{
+  \item The transformed coordinates (if point input) or a \code{terra::SpatRaster} (if raster input)
+  \item A \code{detangler} list containing the transformation log (\code{unpicker}) and a unique hash
+}
+If \code{saveTangles = TRUE}, the following files are written:
+\itemize{
+  \item \code{tangledXY_<hash>.rds} or \code{tangledXY_raster_<hash>.rds} — the transformed data
+  \item \code{detangler_<hash>.rds} — the metadata required for reverse transformation
+  \item Optional: shapefile output if \code{exportShapefile = TRUE}
+}
+}
 
-The most important output to come from this function is the detangler object (saved to file with unique hash key), as this encodes the anonymization steps that can be used for re-identification, or anonymization of associated data. This enables parties to share pertinent information without the requirement to share actual spatial coordinates.
+\note{
+For raster input, both \code{rasterdata = TRUE} and \code{raster_object = TRUE} are usually recommended. This ensures rotation steps align with raster grid expectations.
 
-\code{tangles} is coordinate reference system agnostic. Anonymization will proceed regardless of whether data is in geographic or projected space. Anonymized coordinates will not exist in reality, but the spatial properties of the original data will be maintained.}
+The detangler object is the critical output. It allows the same transformation sequence to be reversed or applied to related datasets.
+
+Coordinate reference systems are intentionally ignored in this function. Anonymised outputs do not have spatial meaning, but retain topological properties of the input.
+
+If writing shapefiles, no CRS is assigned and no \code{.prj} file is written.
+}
 
 \author{Brendan Malone}
 
 \references{
-\itemize{
-\item CM O`Keefe, S Otorepec, M Elliot, E Mackey, and K O`Hara (2017) \href{https://www.data61.csiro.au/en/Our-Work/Safety-and-Security/Privacy-Preservation/De-identification-Decision-Making-Framework}{The De-Identification Decision Making Framework}. CSIRO Reports EP173122 and EP175702.}}
+  \itemize{
+    \item CM O’Keefe, S Otorepec, M Elliot, E Mackey, and K O’Hara (2017) The De-Identification Decision Making Framework. CSIRO Reports EP173122 and EP175702. \doi{10.4225/08/59c169433efd4}
+  }
+}
+
 
 \examples{
-## POINT DATA
+\donttest{
+## Example 1: Using point data.frame
 library(digest)
-data("HV_subsoilpH")
-str(HV_subsoilpH)
-dat.xy<- HV_subsoilpH[,1:2]
-xyData<- as.matrix(dat.xy)
+set.seed(1)
+pts <- data.frame(X = runif(100), Y = runif(100))
+res <- tangles(data = pts, depth = 4)
+str(res)
 
-# anonymize with 5 levels of abstraction
-tangles.out<- tangles(data = xyData, 
-depth = 5, 
-rasterdata = FALSE, 
-raster_object = FALSE, 
-saveTangles = FALSE)
+## Example 2: Using sf object
+library(sf)
+sf_pts <- st_as_sf(pts, coords = c("X", "Y"))
+res_sf <- tangles(data = sf_pts, depth = 3, exportShapefile = TRUE)
 
-str(tangles.out)  
-head(tangles.out[[1]])
+## Example 3: Using terra raster
+library(terra)
+ext_path <- system.file("extdata", package = "tangles")
+rast.files <- list.files(path = ext_path, full.names = TRUE)
+rasters <- terra::rast(rast.files)
+res_r <- tangles(data = rasters, depth = 3, rasterdata = TRUE, raster_object = TRUE)
+str(res_r)
+}}
 
-## RASTER DATA
-library(raster)
-data("hunterCovariates_sub")
-str(hunterCovariates_sub)
-raster_object<- hunterCovariates_sub
-
-tangles.out<- tangles(data = hunterCovariates_sub, 
-depth = 5, 
-rasterdata = TRUE, 
-raster_object = TRUE,
-saveTangles = FALSE)
-
-str(tangles.out)
-
-
-}
+\keyword{spatial}
+\keyword{Anonymisation}
 \keyword{methods}

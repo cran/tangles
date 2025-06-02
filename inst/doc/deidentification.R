@@ -1,101 +1,124 @@
-## ----libraries, echo=T, eval= T, message=FALSE, warning= FALSE-----------
-# R libraries
-library(tangles);library(digest);library(raster);library(sp)
+## ----setup_reset, include=FALSE-----------------------------------------------
+# Save original state
+old_opts    <- options()
+old_par     <- par(no.readonly = TRUE)
+old_wd      <- getwd()
+orig_search <- search()
 
-# DATA SETS
-# POINT PATTERN
+# On exit, restore state and detach any new packages
+on.exit({
+  options(old_opts)
+  par(old_par)
+  setwd(old_wd)
+  new_pkgs <- setdiff(search(), orig_search)
+  for (pkg in new_pkgs) {
+    if (grepl("^package:", pkg)) {
+      detach(pkg, character.only = TRUE, unload = TRUE)
+    }
+  }
+}, add = TRUE)
+
+## ----libraries, echo=TRUE, message=FALSE, warning=FALSE-----------------------
+# Load required libraries
+library(tangles)
+library(digest)
+library(terra)
+library(sf)
+
+# Load point data
 data("HV_subsoilpH")
 
-# RASTER OBJECT
-data("hunterCovariates_sub")
+# Load raster data from files
+ext_path <- system.file("extdata", package = "tangles")
+rast.files <- list.files(path = ext_path, full.names = TRUE)
+rasters <- terra::rast(rast.files)
 
-## ----vshifts, echo=T, eval= F, message=FALSE, warning= FALSE-------------
-#  ## Horizontal shift
-#    leap_X<- function(xyData=NULL){
-#      r.num<- sample(-999999:999999, 1)
-#      xyData[,1]<- xyData[,1] + r.num
-#      return(list(xyData, r.num))
-#    }
-#  
-#  
-#  ## Vertical shift
-#    leap_Y<- function(xyData=NULL){
-#      r.num<- sample(-999999:999999, 1)
-#      xyData[,2]<- xyData[,2] + r.num
-#      return(list(xyData, r.num))
-#    }
+## ----tangles-point, echo=TRUE, message=FALSE, warning=FALSE-------------------
+xyData <- as.matrix(HV_subsoilpH[, 1:2])
+tangles.out <- tangles(
+  data = xyData,
+  depth = 3,
+  rasterdata = FALSE,
+  raster_object = FALSE,
+  saveTangles = TRUE,
+  exportShapefile = TRUE,
+  path = tempdir()
+)
 
-## ----rshifts, echo=T, eval= F, message=FALSE, warning= FALSE-------------
-#  ## Step 3 (data rotation)
-#    rotate_XY<- function(xyData=NULL){
-#  
-#      # pick a point at random from the dataset
-#      row.sample<- sample(1:nrow(xyData),1)
-#      origin.point<- xyData[row.sample,]
-#  
-#      ## Prep data for rotation
-#      x<- t(xyData[,1])
-#      y<- t(xyData[,2])
-#      v = rbind(x,y)
-#  
-#      x_center = origin.point[1]
-#      y_center = origin.point[2]
-#  
-#      #create a matrix which will be used later in caclculations
-#      center <-  v
-#      center[1,]<- as.matrix(x_center)
-#      center[2,]<- as.matrix(y_center)
-#  
-#      if (rasterdata == TRUE){
-#        deg<- sample(c(90,180,270),1, replace = F)} else { # choose a random orientation
-#          deg<- sample(1:359,1, replace = F)} # choose a random orientation
-#  
-#      theta = (deg * pi)/180      # express in radians
-#  
-#      # rotation matrix
-#      R = matrix(c(cos(theta), -sin(theta), sin(theta), cos(theta)), nrow=2)
-#  
-#      # do the rotation...
-#      s = v - center    # shift points in the plane so that the center of rotation is at the origin
-#      so = R%*%s           # apply the rotation about the origin
-#      vo = so + center   # shift again so the origin goes back to the desired center of rotation
-#  
-#      # pick out the vectors of rotated x- and y-data
-#      xyData<- cbind(vo[1,], vo[2,])
-#      return(list(xyData,origin.point,deg))
-#    }
-#  
+# Using sf input
+df <- HV_subsoilpH[, 1:2]
+sf_pts <- st_as_sf(df, coords = c("X", "Y"))
+tangles.sf.out <- tangles(
+  data = sf_pts,
+  depth = 3,
+  saveTangles = TRUE,
+  exportShapefile = TRUE,
+  path = tempdir()
+)
 
-## ----tangles, echo=T, eval= T, message=FALSE, warning= FALSE-------------
-xyData<- as.matrix(HV_subsoilpH[,1:2])
-tangles.out<- tangles(data = xyData, depth = 3, rasterdata = FALSE, raster_object = FALSE, saveTangles = TRUE, path = tempdir())
-str(tangles.out)  
+## ----tangles-raster, echo=TRUE, message=FALSE, warning=FALSE------------------
+tangles.ras.out <- tangles(
+  data = rasters,
+  depth = 3,
+  rasterdata = TRUE,
+  raster_object = TRUE,
+  saveTangles = TRUE,
+  path = tempdir()
+)
 
-## ----tangler, echo=T, eval= T, message=FALSE, warning= FALSE-------------
-# First entangle the point pattern
-xyData<- as.matrix(HV_subsoilpH[,1:2])
-tangles.out<- tangles(data = xyData, depth = 5, rasterdata = TRUE, raster_object = FALSE, saveTangles = TRUE, path = tempdir())
+## ----tangling-together, echo=TRUE, message=FALSE, warning=FALSE---------------
+# 1. Tangling the point data
+xyData <- as.matrix(HV_subsoilpH[, 1:2])
+tangles.out <- tangles(
+  data = xyData,
+  depth = 4,
+  rasterdata = TRUE,
+  raster_object = FALSE,
+  saveTangles = FALSE
+)
 
-# Now entangle the raster object
-tangler.out<- tangler(data = hunterCovariates_sub, tanglerInfo = tangles.out[[2]], raster_object = TRUE, stub = "myname", saveTangles = TRUE, path = tempdir())
+# 2. Tangling the raster data using the same detangler
+tangler.out <- tangler(
+  data = rasters,
+  tanglerInfo = tangles.out[[2]],
+  raster_object = TRUE,
+  stub = "combined",
+  saveTangles = FALSE
+)
 
-## ----t_plot, echo=T, eval= T, message=FALSE, warning= FALSE,fig.width=7, fig.height=5----
-# Plotting
-# original data
-pHV_subsoilpH<- HV_subsoilpH
-coordinates(pHV_subsoilpH)<- ~ X + Y
-plot(hunterCovariates_sub[[1]], main="orginal data"); plot(pHV_subsoilpH, add=T)
+# 3. Convert points to sf objects
+original_pts <- st_as_sf(HV_subsoilpH, coords = c("X", "Y"))
+tangled_pts <- st_as_sf(as.data.frame(tangles.out[[1]]), coords = c("X", "Y"))
 
-# tangled data
-tPP<- as.data.frame(tangles.out[[1]])
-coordinates(tPP)<- ~ X + Y
-plot(tangler.out[[1]], main="tangled data");plot(tPP, add=T)
+# 4. Plot both
+par(mfrow = c(1, 2))
+plot(rasters[[1]], main = "Original Raster + Points")
+plot(original_pts, add = TRUE, pch = 16, col = "blue")
 
-## ----detangles, echo=T, eval= F, message=FALSE, warning= FALSE-----------
-#  # points
-#  xyData<- as.matrix(tangles.out[[1]])
-#  point_detang<- detangles(data=xyData, tanglerInfo=tangles.out[[2]], raster_object = FALSE, stub = "hv_fix", hash_key = "UNIQUE_HASH_KEY_HERE", saveTangles = TRUE, path = tempdir())
+plot(tangler.out[[1]][[1]], main = "Tangled Raster + Points")
+plot(tangled_pts, add = TRUE, pch = 16, col = "red")
+par(mfrow = c(1, 1))
+
+## ----detangles, echo=FALSE, eval=FALSE, message=FALSE, warning=FALSE----------
+#  # Detangle points
+#  detangled_points <- detangles(
+#    data = tangles.out[[1]],
+#    tanglerInfo = tangles.out[[2]],
+#    raster_object = FALSE,
+#    stub = "demo_points",
+#    hash_key = tangles.out[[2]]$hash,
+#    saveTangles = TRUE,
+#    path = tempdir()
+#  )
 #  
-#  #rasters
-#  raster_detang<- detangles(data=tangled.origi, tanglerInfo=tangles.out[[2]], raster_object = TRUE, stub = "hv_fix", hash_key = "UNIQUE_HASH_KEY_HERE", saveTangles = TRUE, path = tempdir())
+#  # Detangle rasters
+#  detangled_rasters <- detangles(
+#    data = tangler.out[[1]],
+#    tanglerInfo = tangles.out[[2]],
+#    raster_object = TRUE,
+#    stub = "demo_raster",
+#    hash_key = tangles.out[[2]]$hash,
+#    saveTangles = TRUE,
+#    path = tempdir()
+#  )
 

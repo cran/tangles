@@ -26,18 +26,14 @@ of rural industries, followed by dry land agricultural grazing systems.}
 \note{This data set is used in the Use R for Digital Soil Mapping manual in the section about quantification of uncertainties.}
 
 \references{
-\itemize{
-\item Gallant, J. C., Dowling, T. I., (2003) \href{http://dx.doi.org/10.1029/2002WR001426}{A multiresolution index of valley bottom flatness for mapping depositional areas}. Water Resources Research 39(12), 1347. 
-\item Malone, B.P., Hughes, P.,  McBratney, A.B., Minasny, B. (2009) \href{http://dx.doi.org/10.1016/j.geodrs.2014.08.001}{A model for the identification of terrons in the Lower Hunter
-Valley, Australia}. Geoderma Regional 1, 31-47.
-\item This data is copyright of the Soil Security Lab, The University of Sydney. If any part of this data is to be used in any publication or report, please provide a citation:
-Soil Security Laboratory, 2015. Use R for Digital Soil Mapping Manual. The University of Sydney, Sydney, Australia.
-}
+  \itemize{
+    \item Gallant, J.C., Dowling, T.I. (2003). A multiresolution index of valley bottom flatness for mapping depositional areas. \emph{Water Resources Research}, 39(12), 1347. \doi{10.1029/2002WR001426}
+    \item Malone, B.P., Hughes, P., McBratney, A.B., Minasny, B. (2014). A model for the identification of terrons in the Lower Hunter Valley, Australia. \emph{Geoderma Regional}, 1, 31–47. \doi{10.1016/j.geodrs.2014.08.001}
+  }
 }
 
 \examples{
 data(HV_subsoilpH)
 summary(HV_subsoilpH)
-
 }
 \keyword{datasets}

@@ -2,7 +2,7 @@
 \docType{data}
 \alias{detangler_data}
 \title{Example object that is output from \code{tangles} function.}
-\description{This output that would be derived from the \code{tangles} function. It contains the instructions for anonymization of associated point pattern or raster data, or the re-identify tangled data.}
+\description{This output that would be derived from the \code{tangles} function. It contains the instructions for anonymisation of associated point pattern or raster data, or the re-identify tangled data.}
 \usage{data(detangler_data)}
 
 \format{
@@ -12,10 +12,13 @@
 \note{This data is the sort of output that one would expect when the \code{tangles} function is used.}
 
 \references{
-\itemize{
-\item CM O’Keefe, S Otorepec, M Elliot, E Mackey, and K O’Hara (2017) \href{https://www.data61.csiro.au/en/Our-Work/Safety-and-Security/Privacy-Preservation/De-identification-Decision-Making-Framework}{The De-Identification Decision Making Framework}. CSIRO Reports EP173122 and EP175702.
-}}
+  \itemize{
+    \item CM O’Keefe, S Otorepec, M Elliot, E Mackey, and K O’Hara (2017) The De-Identification Decision Making Framework. CSIRO Reports EP173122 and EP175702. \doi{10.4225/08/59c169433efd4}
+  }
+}
 
 \examples{
-data(detangler_data)}
+data(detangler_data)
+detangler_data
+}
 \keyword{datasets}

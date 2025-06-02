@@ -1,133 +1,168 @@
-## Function for untangling transformed coordinates back to original XY coordinates or rasters
-## Reverses the steps of the tangles function
+## Function for untangling transformed spatial coordinates or raster data
+##
+## This function reverses the Anonymisation transformations applied by the `tangles()` function.
+## It uses the accompanying detangler object, which stores the random sequence of transformations and parameters used.
+## The function can restore either point coordinates or raster layers to their original form, depending on the input.
+##
+## Inputs:
+##  - data: Either a 2-column matrix or data.frame of transformed XY coordinates,
+##          an `sf` POINT object, or a `terra::SpatRaster` object
+##  - tanglerInfo: A detangler object returned by `tangles()` containing transformation metadata and hash key
+##  - raster_object: Logical; TRUE if input is a raster object
+##  - stub: Character string used for naming output files (optional)
+##  - hash_key: Character string used to confirm that the detangler matches the transformed data
+##  - saveTangles: Logical; if TRUE, saves output to `.rds` and optionally `.tif` or shapefile
+##  - exportShapefile: Logical; if TRUE, exports untangled point data to shapefile (no CRS assigned)
+##  - path: Character string indicating directory to write outputs (default is current working directory)
+##
+## Output:
+##  - Either a data.frame of untangled XY coordinates or a `SpatRaster` object
+##  - Files saved to disk if `saveTangles` or `exportShapefile` is TRUE
 
-
-
-## Inputs
-# data: 2 column MATRIX of transformed spatial coordinates or transformed raster object
-# tanglerInfo: object the was saved from the tangle function that has the steps and parameters need to do the untangle.
-# saveTangles: save outputs of function to file
-
-## Outputs
-# The original spatial point pattern or rasters
-
-
-detangles<- function(data=NULL, tanglerInfo=NULL, raster_object = FALSE, stub = NULL, hash_key=NULL, saveTangles = FALSE, path = NULL){
+detangles <- function(
+    data = NULL,
+    tanglerInfo = NULL,
+    raster_object = FALSE,
+    stub = NULL,
+    hash_key = NULL,
+    saveTangles = FALSE,
+    exportShapefile = FALSE,
+    path = NULL
+) {
+  # If the user wants to save outputs but didn't supply a path,
+  # default into tempdir()
+  if ((saveTangles || exportShapefile) && is.null(path)) {
+    path <- tempdir()}
   
-  #check for hash key match
-  if(as.character(tanglerInfo[1]) != hash_key){
+  ## Validate detangler identity
+  if (as.character(tanglerInfo$hash) != hash_key) {
     stop("ERROR: detangler object does not match these de-identified data")
   }
   
-  if (raster_object == TRUE){
-    tempD <- data.frame(cellNos = seq(1:ncell(data)))
-    vals <- as.data.frame(getValues(data))
-    tempD<- cbind(tempD, vals)
-    tempD <- tempD[complete.cases(tempD), ]
-    cellNos <- c(tempD$cellNos)
-    gXY <- data.frame(xyFromCell(data, cellNos, spatial = FALSE))
-    xyData<- as.matrix(gXY)} else {xyData <- data}
+  ## Prepare coordinate data from raster, sf or matrix
+  if (raster_object) {
+    tempD <- data.frame(cellNos = seq_len(terra::ncell(data)))
+    vals <- as.data.frame(terra::values(data))
+    tempD <- cbind(tempD, vals)
+    cellNos <- tempD$cellNos
+    gXY <- data.frame(terra::xyFromCell(data, cellNos))
+    xyData <- as.matrix(gXY)
+  } else if (inherits(data, "sf")) {
+    xyData <- sf::st_coordinates(data)
+  } else {
+    xyData <- data
+  }
   
-  ###### Internalised Step Functions
-  ## Step 1 (shifting X)
-  leap_Xba<- function(xyData=NULL, r.num=NULL){
-    xyData[,1]<- xyData[,1] - r.num
-    return(xyData)}
-  ## End Step 1 (shifting X)
+  ## Internal function for reversing X shift
+  leap_Xba <- function(xyData, r.num) {
+    xyData[, 1] <- xyData[, 1] - r.num
+    xyData
+  }
   
-  ## Step 2 (shifting Y)
-  leap_Yba<- function(xyData=NULL, r.num=NULL){
-    xyData[,2]<- xyData[,2] - r.num
-    return(xyData)}
-  ## End Step 2 (shifting Y)
+  ## Internal function for reversing Y shift
+  leap_Yba <- function(xyData, r.num) {
+    xyData[, 2] <- xyData[, 2] - r.num
+    xyData
+  }
   
-  ## Step 3 (data rotation)
-  rotate_XYba<- function(xyData=NULL, deg=NULL, origin.point=NULL){
+  ## Internal function for reversing rotation
+  rotate_XYba <- function(xyData, deg, origin.point) {
+    x <- t(xyData[, 1])
+    y <- t(xyData[, 2])
+    v <- rbind(x, y)
     
-    ## Prep data for rotation
-    x<- t(xyData[,1])
-    y<- t(xyData[,2])
-    v = rbind(x,y)
+    x_center <- origin.point[1]
+    y_center <- origin.point[2]
     
-    #origin point
-    x_center = origin.point[1]
-    y_center = origin.point[2]
+    center <- v
+    center[1, ] <- x_center
+    center[2, ] <- y_center
     
-    #create a matrix which will be used later in calculations
-    center <-  v
-    center[1,]<- as.matrix(x_center)
-    center[2,]<- as.matrix(y_center)
+    bdeg <- 360 - deg
+    theta <- (bdeg * pi) / 180
+    R <- matrix(c(cos(theta), -sin(theta), sin(theta), cos(theta)), nrow = 2)
     
-    bdeg<- 360 - deg  # choose a random orientation
-    theta = (bdeg * pi)/180      # express in radians
+    s <- v - center
+    so <- R %*% s
+    vo <- so + center
     
-    R = matrix(c(cos(theta), -sin(theta), sin(theta), cos(theta)), nrow=2)
-    
-    # do the rotation...
-    s = v - center    # shift points in the plane so that the center of rotation is at the origin
-    so = R%*%s           # apply the rotation about the origin
-    vo = so + center   # shift again so the origin goes back to the desired center of rotation
-    
-    # pick out the vectors of rotated x- and y-data
-    xyData<- cbind(vo[1,], vo[2,])
-    return(xyData)}
-  ## END Step 3 (data rotation)
+    xyData <- cbind(vo[1, ], vo[2, ])
+    xyData
+  }
   
-  
-  ########################################## END internalised step functions
-  
-  
-  
-  ## cycle through the step sequence
-  for (i in 1:nrow(tanglerInfo$unpicker)){
-    jp<- nrow(tanglerInfo$unpicker) - (i-1)
-    seq.step<- tanglerInfo$unpicker$step[jp]
+  ## Apply reverse transformation sequence in reverse order
+  for (i in seq_len(nrow(tanglerInfo$unpicker))) {
+    jp <- nrow(tanglerInfo$unpicker) - (i - 1)
+    step <- tanglerInfo$unpicker$step[jp]
     
-    # if step 1
-    if(seq.step == 1){
-      step1.out<- leap_Xba(xyData = xyData , r.num = tanglerInfo$unpicker$leap_dist[jp])
-      # save outputs
-      xyData<- step1.out}
+    if (step == 1) {
+      xyData <- leap_Xba(xyData, tanglerInfo$unpicker$leap_dist[jp])
+    } else if (step == 2) {
+      xyData <- leap_Yba(xyData, tanglerInfo$unpicker$leap_dist[jp])
+    } else if (step == 3) {
+      xyData <- rotate_XYba(
+        xyData,
+        deg = tanglerInfo$unpicker$degree[jp],
+        origin.point = c(
+          tanglerInfo$unpicker$origin_X[jp],
+          tanglerInfo$unpicker$origin_Y[jp]
+        )
+      )
+    }
+  }
+  
+  ## Finalize coordinates
+  xyData <- as.data.frame(xyData)
+  names(xyData) <- c("X", "Y")
+  hash.out <- tanglerInfo$hash
+  
+  ## Handle raster reconstruction
+  if (raster_object) {
+    tDat <- cbind(xyData, tempD)
     
-    # if step 2
-    if(seq.step == 2){
-      step2.out<- leap_Yba(xyData = xyData, r.num = tanglerInfo$unpicker$leap_dist[jp])
-      # save outputs
-      xyData<- step2.out}
-    
-    # if step 3
-    if(seq.step == 3){
-      step3.out<- rotate_XYba(xyData = xyData, deg = tanglerInfo$unpicker$degree[jp], origin.point = c(tanglerInfo$unpicker$origin_X[jp], tanglerInfo$unpicker$origin_Y[jp]))
-      # save outputs
-      xyData<- step3.out}}
-  
-  xyData<- as.data.frame(xyData)
-  names(xyData)<- c("X", "Y")
-  
-  hash.out<- tanglerInfo$hash
-  ## Need capture output to save hash key to a readme file
-  
-  # rasterise tabular data
-  if (raster_object == TRUE){
-    tDat<- cbind(xyData, tempD)
-    if (ncol(tDat) > 4){
-      rasterOuts<- stack()
-      for (z in 4:ncol(tDat)){
-        rasterOuts<- stack(rasterOuts, rasterFromXYZ(tDat[,c(1,2,z)]))}
+    if (ncol(tDat) > 4) {
+      value_cols <- names(tDat)[-(1:3)]
+      r_list <- lapply(value_cols, function(col) {
+        xyz <- tDat[, c("X", "Y", col)]
+        names(xyz) <- c("x", "y", "value")
+        terra::rast(x = xyz, type = "xyz")
+      })
+      rasterOuts <- do.call(c, r_list)
+      names(rasterOuts) <- value_cols
     } else {
-      rasterOuts<- rasterFromXYZ(tDat[,c(1,2,4)])}
-    # write revised coordinates to file
-    nm2<- paste0(path, "/detangledXY_raster",stub, "_", hash.out, ".rds")
-    if (saveTangles == TRUE){
-    saveRDS(object = rasterOuts, file = nm2)}
-    return(rasterOuts)} else {
-      # write revised coordinates to file
-      nm2<- paste0(path, "/detangledXY_",stub, "_", hash.out, ".rds")
-      if (saveTangles == TRUE){
-      saveRDS(object = xyData, file = nm2)}
-      return(xyData)}}
-
-  
-#### END
-
-
+      xyz <- tDat[, c(1, 2, 4)]
+      names(xyz) <- c("x", "y", "value")
+      rasterOuts <- terra::rast(x = xyz, type = "xyz")
+    }
+    
+    ## Save raster outputs
+    if (saveTangles) {
+      saveRDS(rasterOuts, file = file.path(path, paste0("detangledXY_raster.rds")))
+      for (i in seq_len(terra::nlyr(rasterOuts))) {
+        out.name <- file.path(path, paste0("detangledXY_raster_", names(rasterOuts[[i]]), ".tif"))
+        terra::writeRaster(rasterOuts[[i]], filename = out.name, overwrite = TRUE)
+      }
+    }
+    
+    return(list(rasterOuts))
+    
+  } else {
+    ## Optionally save detangled points to .rds
+    if (saveTangles) {
+      nm <- file.path(path, paste0("detangledXY_", stub, "_", hash.out, ".rds"))
+      saveRDS(xyData, file = nm)
+    }
+    
+    ## Optionally export to shapefile (with NA CRS)
+    if (exportShapefile) {
+      pts_sf <- sf::st_as_sf(xyData, coords = c("X", "Y"))
+      sf::st_crs(pts_sf) <- NA  # intentionally unspecified
+      sf_out <- file.path(path, paste0("detangledXY_", stub, "_", hash.out, ".shp"))
+      suppressWarnings(suppressMessages(
+        sf::st_write(pts_sf, sf_out, delete_layer = TRUE, quiet = TRUE)
+      ))
+    }
+    
+    return(xyData)
+  }
+}
